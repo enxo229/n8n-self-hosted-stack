@@ -1,0 +1,235 @@
+services:
+  # Servicio principal de n8n
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n_main
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # Configuración de base de datos
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n_database
+      - DB_POSTGRESDB_USER=n8n_user
+      - DB_POSTGRESDB_PASSWORD=n8nPass123!
+      - DB_POSTGRESDB_SCHEMA=public
+      
+      # Configuraciones de seguridad y permisos
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_SECURE_COOKIE=false  # Cambiar a true si usas HTTPS
+      
+      # Configuraciones de Task Runners (recomendado)
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_RUNNERS_MODE=internal
+      
+      # Configuraciones de red y host
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http  # Cambiar a https si usas SSL
+      
+      # Configuraciones de logging
+      - N8N_LOG_LEVEL=info
+      - N8N_LOG_OUTPUT=console
+      
+      # Configuraciones de personalización y telemetría
+      - N8N_PERSONALIZATION_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_ANONYMOUS_USAGE_TRACKING=false
+      
+      # Configuraciones de ejecución
+      - EXECUTIONS_PROCESS=main
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336  # 14 días en horas
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+      
+      # Configuraciones de webhook
+      - WEBHOOK_URL=http://localhost:5678/
+      
+      # Configuraciones de memoria y rendimiento
+      - N8N_PAYLOAD_DEFAULT_MAX_SIZE=16
+      - N8N_METRICS=false
+      
+      # Configuraciones de timezone
+      - GENERIC_TIMEZONE=America/Bogota
+      - TZ=America/Bogota
+      
+      # Configuraciones adicionales para agentes IA
+      - N8N_AI_ENABLED=true
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Solo si necesitas ejecutar contenedores desde n8n
+    networks:
+      - n8n_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Servicio de PostgreSQL optimizado
+  postgres:
+    image: postgres:16-alpine
+    container_name: n8n_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=n8n_user
+      - POSTGRES_PASSWORD=n8nPass123!
+      - POSTGRES_DB=n8n_database
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      - PGUSER=n8n_user
+    ports:
+      - "5432:5432"
+    volumes:
+      - n8n_postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d  # Scripts de inicialización opcionales
+    networks:
+      - n8n_network
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c random_page_cost=1.1
+      -c temp_file_limit=2GB
+      -c log_min_duration_statement=200ms
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_lock_waits=on
+      -c log_statement=mod
+      -c log_temp_files=0
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=8MB
+      -c default_statistics_target=100
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d n8n_database -U n8n_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis para caché (opcional pero recomendado para rendimiento)
+  redis:
+    image: redis:7-alpine
+    container_name: n8n_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - n8n_redis_data:/data
+    networks:
+      - n8n_network
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Contenedor para backups automáticos (opcional)
+  postgres-backup:
+    image: postgres:16-alpine
+    container_name: n8n_backup
+    restart: "no"
+    environment:
+      - POSTGRES_USER=n8n_user
+      - POSTGRES_PASSWORD=n8nPass123!
+      - POSTGRES_DB=n8n_database
+      - PGPASSWORD=n8nPass123!
+    volumes:
+      - ./backups:/backups
+      - n8n_postgres_data:/var/lib/postgresql/data:ro
+    networks:
+      - n8n_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Ejecutar backup manualmente con: docker-compose run --rm postgres-backup
+    command: >
+      sh -c "
+      echo 'Creando backup de la base de datos...' &&
+      pg_dump -h postgres -U n8n_user -d n8n_database > /backups/n8n_backup_$$(date +%Y%m%d_%H%M%S).sql &&
+      echo 'Backup completado en /backups/'
+      "
+
+  # Ollama con modelo gemma3:4b
+  ollama:
+    image: ollama/ollama:latest
+    container_name: n8n_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - n8n_network
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_KEEP_ALIVE=24h
+    deploy:
+      resources:
+        reservations:
+          memory: 4GB
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:11434/ || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+
+  # Contenedor para inicializar el modelo gemma3:4b
+  ollama-init:
+    image: curlimages/curl:latest
+    container_name: n8n_ollama_init
+    restart: "no"
+    networks:
+      - n8n_network
+    depends_on:
+      ollama:
+        condition: service_started
+    command: >
+      sh -c "
+      echo 'Esperando a que Ollama esté disponible...' &&
+      sleep 30 &&
+      while ! curl -s http://ollama:11434/ > /dev/null; do
+        echo 'Esperando a Ollama...' &&
+        sleep 10
+      done &&
+      echo 'Ollama está disponible, descargando modelo...' &&
+      curl -X POST http://ollama:11434/api/pull -d '{\"name\": \"gemma3:4b\"}' &&
+      echo 'Modelo descargado correctamente'
+      "
+
+# Definición de volúmenes
+volumes:
+  n8n_data:
+    driver: local
+  n8n_postgres_data:
+    driver: local
+  n8n_redis_data:
+    driver: local
+  ollama_data:
+    driver: local
+
+# Definición de redes
+networks:
+  n8n_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
