@@ -1,0 +1,15 @@
+# Fichero de variables de entorno. ¡No subir nunca a un repositorio público!
+.env
+
+# Ficheros de backup generados.
+/backups/*.sql
+
+# Directorios de datos de los volúmenes de Docker.
+# Aunque Docker los gestiona fuera del proyecto, es una buena práctica ignorarlos.
+n8n_data/
+n8n_postgres_data/
+
+# Ficheros de configuración de IDEs y del sistema operativo
+.vscode/
+.idea/
+*.DS_Store
