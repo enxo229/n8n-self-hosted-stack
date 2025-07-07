@@ -1,6 +1,6 @@
-# n8n Self-Hosted Stack con Ollama y PostgreSQL
+# n8n Self-Hosted Stack con Ollama, Qdrant y PostgreSQL
 
-Este repositorio proporciona una configuración `docker-compose` completa y lista para producción para autoalojar **n8n**. El stack incluye una base de datos PostgreSQL optimizada para el rendimiento, Redis para el almacenamiento en caché y capacidades de IA locales impulsadas por **Ollama**.
+Este repositorio proporciona una configuración `docker-compose` completa y lista para producción para autoalojar **n8n**. El stack incluye una base de datos PostgreSQL optimizada, Redis para caché, capacidades de IA locales con **Ollama** y una base de datos vectorial **Qdrant** para flujos de trabajo de RAG.
 
 !n8n Logo
 
@@ -8,14 +8,14 @@ Este repositorio proporciona una configuración `docker-compose` completa y list
 
 - **n8n**: La herramienta principal de automatización de flujos de trabajo.
 - **PostgreSQL 16**: Base de datos persistente y optimizada para n8n.
-- **Redis**: Integrado para el almacenamiento en caché, mejorando el rendimiento de la ejecución de flujos de trabajo.
-- **Ollama**: Permite ejecutar Modelos de Lenguaje Grandes (LLMs) de forma local. Preconfigurado para descargar e iniciar el modelo `gemma3:4b`.
+- **Redis**: Integrado para el almacenamiento en caché, mejorando el rendimiento.
+- **Ollama**: Permite ejecutar Modelos de Lenguaje Grandes (LLMs) de forma local. Preconfigurado para descargar el modelo `gemma3:4b`.
+- **Qdrant**: Base de datos vectorial para almacenar y consultar embeddings, ideal para casos de uso de RAG (Retrieval-Augmented Generation).
 - **Seguridad**: Gestión de secretos y configuraciones a través de un archivo `.env`.
 - **Backups**: Un servicio bajo demanda para realizar copias de seguridad de la base de datos PostgreSQL.
-- **Healthchecks**: Comprobaciones de estado robustas para todos los servicios críticos, asegurando un orden de arranque correcto y estable.
+- **Healthchecks**: Comprobaciones de estado robustas para todos los servicios críticos.
 
 ## 📂 Estructura del Proyecto
-
 ```
 .
 ├── backups/
@@ -30,70 +30,68 @@ Este repositorio proporciona una configuración `docker-compose` completa y list
 
 ## 🚀 Cómo Empezar
 
-Sigue estos pasos para poner en marcha todo el stack.
-
 ### Prerrequisitos
-
 - Docker
-- Docker Compose (generalmente incluido con Docker Desktop)
+- Docker Compose
 
 ### Instalación
-
 1.  **Clona el repositorio:**
     ```bash
     git clone https://github.com/tu-usuario/tu-repositorio.git
     cd tu-repositorio
     ```
-
-2.  **Crea tu archivo de configuración de entorno:**
-    Copia el archivo de ejemplo para crear tu propia configuración local.
+2.  **Crea tu archivo de entorno:**
     ```bash
     cp .env.example .env
     ```
-
 3.  **Edita el archivo `.env`:**
-    Abre el archivo `.env` y modifica las variables según tus necesidades. **Es muy importante que cambies `POSTGRES_PASSWORD` por una contraseña segura.**
+    Abre `.env` y modifica las variables. **Es muy importante que cambies `POSTGRES_PASSWORD` y, opcionalmente, definas una `QDRANT_API_KEY` segura.**
 
-4.  **(Opcional) Scripts de inicialización de la base de datos:**
-    Si tienes scripts `.sql` o `.sh` que deseas ejecutar cuando la base de datos se cree por primera vez, colócalos en el directorio `postgres-init/`.
-
-5.  **Inicia el stack:**
+4.  **Inicia el stack:**
     ```bash
     docker-compose up -d
     ```
-
-6.  **Inicialización de Ollama:**
-    La primera vez que inicies el stack, el servicio `ollama-init` descargará el modelo de IA (`gemma3:4b`). Este proceso puede tardar varios minutos dependiendo de tu conexión a internet. Puedes monitorear el progreso con el siguiente comando:
+5.  **Inicialización de Ollama:**
+    La primera vez que inicies el stack, el servicio `ollama-init` descargará el modelo de IA. Puedes monitorear el progreso con:
     ```bash
     docker-compose logs -f ollama-init
     ```
-    Una vez que veas el mensaje "Modelo descargado correctamente", el servicio se detendrá y todo estará listo.
+    Una vez que el modelo se haya descargado, el servicio se detendrá.
 
 ## ⚙️ Uso
 
-### Acceder a n8n
-- **URL**: Abre tu navegador y ve a http://localhost:5678
+### Acceder a los Servicios
+- **n8n**: http://localhost:5678
+- **Qdrant UI**: http://localhost:6333/dashboard
 
-### Conectar n8n con Ollama
-1.  Dentro de n8n, crea un nuevo flujo de trabajo y añade el nodo **Ollama**.
-2.  En la configuración del nodo:
+### Conectar n8n con los Servicios de IA
+
+#### Ollama
+1.  En un flujo de n8n, añade el nodo **Ollama**.
+2.  Configúralo con:
     - **Base URL**: `http://ollama:11434`
     - **Model**: `gemma3:4b`
 
+#### Qdrant
+1.  Añade el nodo **Qdrant** a tu flujo de trabajo.
+2.  En la configuración de las credenciales:
+    - **Host**: `qdrant`
+    - **Port**: `6333`
+    - **API Key**: La clave que definiste en tu archivo `.env` para `QDRANT_API_KEY`.
+
 ### Realizar un Backup Manual
-Para crear una copia de seguridad de tu base de datos PostgreSQL, ejecuta el siguiente comando. El archivo `.sql` se guardará en la carpeta `backups/`.
+Para crear una copia de seguridad de tu base de datos PostgreSQL, ejecuta:
 ```bash
 docker-compose run --rm postgres-backup
 ```
+El archivo `.sql` se guardará en la carpeta `backups/`.
 
 ### Detener el Stack
-Para detener todos los servicios:
 ```bash
 docker-compose down
 ```
 
 ## 📄 Licencia
-
 [!License: MIT](https://opensource.org/licenses/MIT)
 
 Este proyecto está bajo la Licencia MIT.

@@ -67,6 +67,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5678/healthz || exit 1"]
       interval: 30s
@@ -215,6 +217,21 @@ services:
       echo 'Modelo descargado correctamente'
       "
 
+  # Qdrant para Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: n8n_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - n8n_network
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+
 # Definición de volúmenes
 volumes:
   n8n_data:
@@ -224,6 +241,8 @@ volumes:
   n8n_redis_data:
     driver: local
   ollama_data:
+    driver: local
+  qdrant_data:
     driver: local
 
 # Definición de redes
